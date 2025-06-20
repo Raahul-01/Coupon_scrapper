@@ -34,8 +34,8 @@ def main():
     print("=" * 70)
     
     try:
-        # Initialize professional automation engine
-        automation_engine = ProfessionalCouponEngine(enable_smart_features=True)
+        # Initialize professional automation engine (disable smart features to fetch ALL content)
+        automation_engine = ProfessionalCouponEngine(enable_smart_features=False)
         
         # Get comprehensive market keywords
         market_keywords = automation_engine.get_comprehensive_market_keywords()

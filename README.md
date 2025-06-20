@@ -54,7 +54,22 @@
 pip install -r requirements.txt
 ```
 
-### 2. **Run Professional Automation System**
+### 2. **🔐 Security Setup (REQUIRED)**
+```bash
+# Copy the environment template
+cp .env.example .env
+
+# Edit .env file and add your YouTube API key
+# YOUTUBE_API_KEY=your_actual_api_key_here
+```
+
+**⚠️ IMPORTANT SECURITY NOTES:**
+- Never commit your `.env` file to Git (it's in `.gitignore`)
+- Get your API key from: https://console.developers.google.com/
+- Enable YouTube Data API v3 for your project
+- Restrict your API key to YouTube Data API v3 only
+
+### 3. **Run Professional Automation System**
 ```bash
 python coupon_automation_system.py
 ```
@@ -121,11 +136,19 @@ python coupon_automation_system.py
 
 ## 🔧 **Professional Configuration**
 
-### **API Key Setup**
-Edit `config/application_settings.py` and add your YouTube API key:
-```python
-YOUTUBE_API_KEY = "your_api_key_here"
+### **🔐 Secure API Key Setup**
+**NEVER edit the config file directly!** Use environment variables:
+
+1. Copy `.env.example` to `.env`
+2. Edit `.env` and add your YouTube API key:
+```bash
+YOUTUBE_API_KEY=your_actual_api_key_here
 ```
+
+**Security Features:**
+- API keys are loaded from environment variables
+- `.env` file is automatically ignored by Git
+- No sensitive data in source code
 
 ### **Professional Customization**
 - Modify keyword list in `coupon_extraction_engine.py`

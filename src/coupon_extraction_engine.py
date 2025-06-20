@@ -26,8 +26,8 @@ from text_processing_utils import (
 
 # Import settings
 import sys
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'config'))
-from application_settings import (
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from config.application_settings import (
     YOUTUBE_API_KEY, YOUTUBE_API_SERVICE_NAME, YOUTUBE_API_VERSION,
     MAX_RESULTS_PER_REQUEST, REQUEST_TIMEOUT, RATE_LIMIT_DELAY,
     COUPON_PATTERNS, COMMON_BRANDS, CATEGORY_KEYWORDS

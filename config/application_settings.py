@@ -7,11 +7,19 @@ Enterprise configuration for coupon automation system
 import os
 from typing import Dict, List
 
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    # Fallback if python-dotenv is not installed
+    pass
+
 # ================================
 # YOUTUBE API CONFIGURATION
 # ================================
 
-YOUTUBE_API_KEY = "AIzaSyBcZp6k_aqFFr4C-oh6cmtv-C1xJL72XGk"
+YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY', 'YOUR_API_KEY_HERE')
 YOUTUBE_API_SERVICE_NAME = "youtube"
 YOUTUBE_API_VERSION = "v3"
 

@@ -200,6 +200,9 @@ def extract_brands(text: str) -> List[str]:
 
     # Also check against known major brands for accuracy
     try:
+        import sys
+        import os
+        sys.path.append(os.path.dirname(os.path.dirname(__file__)))
         from config.application_settings import COMMON_BRANDS
         text_lower = text.lower()
         for brand in COMMON_BRANDS:
