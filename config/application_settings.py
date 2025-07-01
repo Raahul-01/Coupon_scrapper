@@ -19,7 +19,7 @@ except ImportError:
 # YOUTUBE API CONFIGURATION
 # ================================
 
-YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY', 'YOUR_API_KEY_HERE')
+YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY', 'AIzaSyBcZp6k_aqFFr4C-oh6cmtv-C1xJL72XGk')
 YOUTUBE_API_SERVICE_NAME = "youtube"
 YOUTUBE_API_VERSION = "v3"
 
@@ -32,6 +32,27 @@ REQUEST_TIMEOUT = 30
 RATE_LIMIT_DELAY = 0.3  # Seconds between requests
 MAX_VIDEOS_PER_KEYWORD = 30
 MAX_COUPONS_PER_VIDEO = 10
+
+# ================================
+# FRESHNESS CONFIGURATION
+# ================================
+
+# Only get videos from last 30 days for fresh coupons
+PUBLISHED_AFTER_DAYS = 30  # Videos published in last 30 days
+REQUIRE_RECENT_CONTENT = True  # Filter for recent content only
+EXCLUDE_OLD_KEYWORDS = True  # Skip videos with old date mentions
+
+# Fresh content keywords to prioritize
+FRESH_KEYWORDS = [
+    '2025', 'latest', 'new', 'current', 'today', 'this week', 'this month',
+    'updated', 'fresh', 'recent', 'now', 'active', 'working', 'verified'
+]
+
+# Old content indicators to avoid
+OLD_KEYWORDS = [
+    '2023', '2022', '2021', '2020', 'old', 'expired', 'outdated', 'previous',
+    'last year', 'archive', 'historical', 'past', 'former', 'discontinued'
+]
 
 # ================================
 # INTELLIGENCE PATTERNS

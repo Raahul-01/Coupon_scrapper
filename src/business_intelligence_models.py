@@ -29,6 +29,7 @@ class CouponInfo:
     minimum_purchase: Optional[float] = None
     video_id: Optional[str] = None
     video_title: Optional[str] = None
+    channel_name: Optional[str] = None  # NEW: YouTuber/Influencer Channel Name
     extracted_text: Optional[str] = None
     
     # Intelligence Metadata
