@@ -8,6 +8,7 @@ import re
 import logging
 from typing import List, Dict, Optional, Tuple, Set
 from collections import Counter
+from enhanced_brand_database import get_all_brands, is_known_brand, get_brand_category
 
 logger = logging.getLogger(__name__)
 
@@ -90,23 +91,19 @@ def extract_coupon_codes_contextual(text: str) -> List[Dict[str, any]]:
     return unique_findings[:10]  # Limit to top 10 most confident findings
 
 def is_valid_coupon_code_improved(code: str) -> bool:
-    """Improved coupon code validation with strict filtering"""
-    if not code or len(code) < 4 or len(code) > 20:
+    """PROFESSIONAL HIGH-VOLUME coupon code validation - Less restrictive for maximum capture"""
+    if not code or len(code) < 3 or len(code) > 25:  # Relaxed length requirements
         return False
 
-    # Must be alphanumeric only
-    if not code.isalnum():
+    # Allow alphanumeric with some special characters
+    if not re.match(r'^[A-Z0-9\-_]+$', code):
         return False
 
-    # Must have both letters and numbers (actual coupon codes have this pattern)
-    has_letters = any(c.isalpha() for c in code)
-    has_numbers = any(c.isdigit() for c in code)
+    # RELAXED: Allow codes with only letters OR only numbers (many valid codes are like this)
+    # Examples: "WELCOME", "SAVE", "2024", "50OFF" are all valid
 
-    if not (has_letters and has_numbers):
-        return False
-
-    # Avoid codes that are too simple or repetitive
-    if len(set(code)) < 3:  # Too few unique characters
+    # Avoid codes that are too repetitive (like "AAAA" or "1111")
+    if len(set(code)) < 2:  # Reduced from 3 to 2
         return False
 
     # STRICT: Exclude common non-code words that are frequently misidentified
@@ -169,31 +166,8 @@ def extract_brand_from_context(context: str, coupon_code: str) -> Optional[str]:
     if not context or not coupon_code:
         return None
 
-    # Expanded known brands database for better recognition
-    known_brands = {
-        # E-commerce platforms
-        'AMAZON', 'FLIPKART', 'MYNTRA', 'AJIO', 'NYKAA', 'MEESHO', 'SNAPDEAL',
-        'EBAY', 'WALMART', 'TARGET', 'ALIBABA', 'ALIEXPRESS', 'ETSY', 'SHOPIFY',
-        # Food delivery
-        'ZOMATO', 'SWIGGY', 'DOORDASH', 'UBEREATS', 'GRUBHUB', 'FOODPANDA',
-        'DOMINOS', "DOMINO'S", 'KFC', 'MCDONALD', 'MCDONALDS', 'PIZZA', 'STARBUCKS',
-        'SUBWAY', 'BURGERKING', 'PIZZAHUT',
-        # Transportation
-        'UBER', 'OLA', 'LYFT', 'GRAB',
-        # Payment/Finance
-        'PAYTM', 'PHONEPE', 'GOOGLEPAY', 'PAYPAL', 'RAZORPAY',
-        # Entertainment
-        'NETFLIX', 'HOTSTAR', 'SPOTIFY', 'PRIME', 'DISNEY', 'HULU', 'YOUTUBE',
-        # Technology
-        'SAMSUNG', 'ONEPLUS', 'XIAOMI', 'REALME', 'APPLE', 'MICROSOFT', 'GOOGLE',
-        'SONY', 'LG', 'HUAWEI', 'OPPO', 'VIVO', 'NOKIA',
-        # Fashion
-        'NIKE', 'ADIDAS', 'PUMA', 'ZARA', 'H&M', 'UNIQLO', 'LEVIS', 'GUCCI',
-        # Travel
-        'BOOKING', 'MAKEMYTRIP', 'GOIBIBO', 'AIRBNB', 'OYO', 'EXPEDIA', 'AGODA',
-        # Others
-        'TEMU', 'IHERB', 'BLUEHOST', 'GODADDY', 'HOSTGATOR'
-    }
+    # Use our comprehensive enhanced brand database
+    known_brands = {brand.upper() for brand in get_all_brands()}
 
     # Clean context for better matching
     context_clean = re.sub(r'[^\w\s]', ' ', context)

@@ -29,16 +29,16 @@ YOUTUBE_API_VERSION = "v3"
 
 MAX_RESULTS_PER_REQUEST = 50
 REQUEST_TIMEOUT = 30
-RATE_LIMIT_DELAY = 0.3  # Seconds between requests
-MAX_VIDEOS_PER_KEYWORD = 30
-MAX_COUPONS_PER_VIDEO = 10
+RATE_LIMIT_DELAY = 0.1  # Reduced delay for faster processing
+MAX_VIDEOS_PER_KEYWORD = 100  # Increased from 30 to 100
+MAX_COUPONS_PER_VIDEO = 15  # Increased from 10 to 15
 
 # ================================
 # FRESHNESS CONFIGURATION
 # ================================
 
-# Only get videos from last 30 days for fresh coupons
-PUBLISHED_AFTER_DAYS = 30  # Videos published in last 30 days
+# Extended time range to capture more valid coupons
+PUBLISHED_AFTER_DAYS = 90  # Videos published in last 90 days (was 30)
 REQUIRE_RECENT_CONTENT = True  # Filter for recent content only
 EXCLUDE_OLD_KEYWORDS = True  # Skip videos with old date mentions
 

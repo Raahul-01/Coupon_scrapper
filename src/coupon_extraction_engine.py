@@ -9,12 +9,16 @@ import time
 import logging
 import json
 import re
+import requests
 from typing import List, Optional, Dict, Any, Set
 from collections import Counter
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 import pandas as pd
 from datetime import datetime, timedelta
+from urllib.parse import urljoin, urlparse
+from bs4 import BeautifulSoup
+import random
 
 # Import improved modules
 from business_intelligence_models import CouponInfo, VideoInfo, ScrapingResult
@@ -22,6 +26,11 @@ from text_processing_utils import (
     extract_coupon_information_improved,
     clean_text_advanced
 )
+from web_scraping_engine import WebScrapingEngine
+from enhanced_brand_database import get_all_brands, get_brands_by_category, is_known_brand
+from channel_traversal_engine import ChannelTraversalEngine
+from enhanced_discovery_engine import EnhancedDiscoveryEngine
+from persistent_data_manager import PersistentDataManager
 
 # Professional logging setup
 os.makedirs('data', exist_ok=True)
@@ -48,25 +57,48 @@ class ImprovedCouponEngine:
     - Focuses on actual coupon codes, not random words
     """
     
-    def __init__(self, api_key: str, enable_deduplication: bool = True):
-        """Initialize improved extraction engine"""
+    def __init__(self, api_key: str, enable_deduplication: bool = True, enable_web_scraping: bool = True,
+                 enable_channel_traversal: bool = True, enable_persistent_data: bool = True):
+        """Initialize comprehensive extraction engine with all advanced capabilities"""
         self.api_key = api_key
         if not self.api_key or self.api_key == 'YOUR_API_KEY_HERE':
             raise ValueError("Please provide a valid YouTube API key")
-        
+
         self.youtube = build('youtube', 'v3', developerKey=self.api_key)
-        
-        # Improved tracking
+
+        # Initialize all engines
+        self.enable_web_scraping = enable_web_scraping
+        self.enable_channel_traversal = enable_channel_traversal
+        self.enable_persistent_data = enable_persistent_data
+
+        if enable_web_scraping:
+            self.web_scraper = WebScrapingEngine(enable_rate_limiting=True)
+            logger.info("Web scraping engine initialized")
+
+        if enable_channel_traversal:
+            self.channel_traversal = ChannelTraversalEngine(api_key)
+            self.discovery_engine = EnhancedDiscoveryEngine(api_key)
+            logger.info("Channel traversal and discovery engines initialized")
+
+        if enable_persistent_data:
+            self.data_manager = PersistentDataManager()
+            logger.info("Persistent data manager initialized")
+
+        # Enhanced tracking
         self.enable_deduplication = enable_deduplication
         self.processed_combinations: Set[str] = set()  # Track code-brand combinations
         self.session_stats = {
             'total_videos_analyzed': 0,
             'total_coupons_found': 0,
             'unique_coupons': 0,
-            'false_positives_prevented': 0
+            'false_positives_prevented': 0,
+            'web_scraped_coupons': 0,
+            'channel_traversal_videos': 0,
+            'cross_platform_coupons': 0,
+            'incremental_new_coupons': 0
         }
-        
-        logger.info("Improved Coupon Extraction Engine initialized (context-aware)")
+
+        logger.info("Comprehensive Coupon Extraction Engine initialized (all features enabled)")
     
     def analyze_video_description_improved(self, description: str, video_title: str, video_id: str) -> List[CouponInfo]:
         """
@@ -131,24 +163,29 @@ class ImprovedCouponEngine:
     
     def validate_extraction_quality(self, coupon_info: Dict[str, any]) -> bool:
         """
-        Validate the quality of extracted coupon information with strict criteria
+        ULTRA HIGH-VOLUME validation - Minimal restrictions for maximum coupon capture
         """
         code = coupon_info.get('coupon_code', '')
         brand = coupon_info.get('brand', '')
         confidence = coupon_info.get('confidence', 0)
-        context = coupon_info.get('description', '')
 
-        # Must have valid code
-        if not code or len(code) < 4:
+        # Must have valid code (minimum requirements only)
+        if not code or len(code) < 3:  # Reduced from 4 to 3
             return False
 
-        # Must have identified brand (not Unknown or None)
-        if not brand or brand in ['Unknown', 'N/A', '']:
+        # Allow coupons even without perfect brand identification
+        # Brand can be 'Unknown' - we'll extract it anyway for volume
+        if not brand:
             return False
 
-        # Must meet minimum confidence threshold - raised to be more strict
-        if confidence < 0.7:
+        # ULTRA LOW confidence threshold for maximum volume
+        if confidence < 0.3:  # Reduced from 0.4 to 0.3
             return False
+
+        # Enhanced brand validation using our comprehensive database
+        if brand != 'Unknown' and is_known_brand(brand):
+            # If it's a known brand, accept with lower standards
+            return True
 
         # Comprehensive list of words that are NOT coupon codes
         common_non_codes = {
@@ -185,13 +222,11 @@ class ImprovedCouponEngine:
         if brand in suspicious_brands:
             return False
 
-        # Additional validation: code should have a reasonable mix of letters and numbers
-        if not self._has_valid_code_pattern(code):
-            return False
+        # REMOVED: Overly restrictive pattern validation
+        # Allow more coupon code patterns for higher volume
 
-        # Validate that the brand makes sense in the context
-        if not self._validate_brand_context_match(brand, context):
-            return False
+        # REMOVED: Overly restrictive brand-context validation
+        # Accept more brand associations for higher volume
 
         return True
 
@@ -247,11 +282,11 @@ class ImprovedCouponEngine:
         return False
 
     def search_fresh_videos(self, query: str, max_results: int = 50) -> List[str]:
-        """Search for fresh videos with promotional/influencer content"""
+        """Search for videos with promotional/influencer content - EXTENDED TIME RANGE"""
         try:
-            # Search for recent videos (last 15 days for very fresh content)
-            fifteen_days_ago = datetime.now() - timedelta(days=15)
-            published_after = fifteen_days_ago.isoformat() + 'Z'
+            # Search for recent videos (last 90 days for broader coverage)
+            ninety_days_ago = datetime.now() - timedelta(days=90)
+            published_after = ninety_days_ago.isoformat() + 'Z'
 
             # Use broader search terms to capture influencer promotional content
             # Don't force "coupon code" - let the content analysis find the codes
@@ -260,12 +295,12 @@ class ImprovedCouponEngine:
                 part='id',
                 type='video',
                 maxResults=min(max_results, 50),
-                order='date',
+                order='relevance',  # Changed from 'date' to 'relevance' for better quality
                 publishedAfter=published_after
             ).execute()
 
             video_ids = [item['id']['videoId'] for item in search_response['items']]
-            logger.info(f"Found {len(video_ids)} fresh promotional videos for query: '{query}'")
+            logger.info(f"Found {len(video_ids)} promotional videos (90-day range) for query: '{query}'")
 
             return video_ids
 
@@ -342,8 +377,8 @@ class ImprovedCouponEngine:
                 result.total_videos_processed += 1
                 self.session_stats['total_videos_analyzed'] += 1
                 
-                # Rate limiting
-                time.sleep(0.5)
+                # Reduced rate limiting for faster processing
+                time.sleep(0.1)
                 
             except Exception as e:
                 logger.error(f"Error processing video {video_id}: {e}")
@@ -383,7 +418,230 @@ class ImprovedCouponEngine:
 
         return filename
     
-    def run_improved_extraction(self, search_queries: List[str] = None, max_results_per_query: int = 30) -> ScrapingResult:
+    def run_comprehensive_extraction(self, search_queries: List[str] = None, max_results_per_query: int = 50,
+                                   enable_web_scraping: bool = True, target_industries: List[str] = None) -> ScrapingResult:
+        """
+        COMPREHENSIVE extraction combining YouTube API + Web Scraping for MAXIMUM volume
+        """
+        logger.info("Starting COMPREHENSIVE coupon extraction (YouTube + Web Scraping)")
+
+        # Run YouTube extraction first
+        youtube_result = self.run_improved_extraction(search_queries, max_results_per_query)
+
+        # Run web scraping if enabled
+        if enable_web_scraping and self.enable_web_scraping:
+            logger.info("Starting web scraping phase for additional coupons...")
+
+            # Define target industries if not provided
+            if not target_industries:
+                target_industries = ['hosting', 'fitness', 'software', 'gaming', 'fashion']
+
+            # Get target brands for each industry
+            target_brands = []
+            for industry in target_industries:
+                industry_brands = get_brands_by_category(industry)[:20]  # Top 20 brands per industry
+                target_brands.extend(industry_brands)
+
+            # Run web scraping
+            web_result = self.web_scraper.run_comprehensive_scraping(
+                target_brands=target_brands,
+                target_industries=target_industries
+            )
+
+            # Merge results
+            youtube_result.videos.extend(web_result.videos)
+            youtube_result.total_videos_processed += web_result.total_videos_processed
+            youtube_result.total_coupons_found += web_result.total_coupons_found
+
+            self.session_stats['web_scraped_coupons'] = web_result.total_coupons_found
+
+            logger.info(f"Web scraping added {web_result.total_coupons_found} additional coupons")
+
+        # Print comprehensive statistics
+        self.print_comprehensive_stats(youtube_result)
+
+        return youtube_result
+
+    def run_ultimate_extraction(self, search_queries: List[str] = None, max_results_per_query: int = 50,
+                               enable_channel_traversal: bool = True, enable_cross_platform: bool = True,
+                               target_industries: List[str] = None, max_channels_per_category: int = 20) -> ScrapingResult:
+        """
+        ULTIMATE extraction combining ALL discovery mechanisms:
+        - Keyword-based YouTube search
+        - Comprehensive channel traversal
+        - Related video following
+        - Playlist exploration
+        - Cross-platform discovery
+        - Web scraping
+        - Intelligent duplicate detection
+        - Persistent data management
+        """
+        logger.info("🚀 Starting ULTIMATE coupon extraction with ALL discovery mechanisms!")
+
+        # Initialize comprehensive result
+        ultimate_result = ScrapingResult()
+        all_discovered_videos = []
+
+        # Phase 1: Traditional keyword-based search (baseline)
+        logger.info("📍 Phase 1: Traditional keyword-based YouTube search...")
+        keyword_result = self.run_improved_extraction(search_queries, max_results_per_query)
+        ultimate_result.videos.extend(keyword_result.videos)
+        ultimate_result.total_videos_processed += keyword_result.total_videos_processed
+        ultimate_result.total_coupons_found += keyword_result.total_coupons_found
+
+        # Collect seed videos for further discovery
+        seed_videos = []
+        for video in keyword_result.videos:
+            seed_videos.append(video.video_id)
+
+        # Phase 2: Channel-based traversal discovery
+        if enable_channel_traversal and self.enable_channel_traversal:
+            logger.info("📍 Phase 2: Comprehensive channel traversal discovery...")
+
+            # Define target categories
+            if not target_industries:
+                target_industries = ['tech_deals', 'hosting_reviews', 'fitness_supplements',
+                                   'fashion_hauls', 'food_delivery', 'software_tutorials',
+                                   'gaming_content', 'general_deals']
+
+            # Run comprehensive channel traversal
+            traversal_videos = self.channel_traversal.run_comprehensive_channel_traversal(
+                target_categories=target_industries,
+                max_videos_per_category=200
+            )
+
+            # Process discovered videos
+            if traversal_videos:
+                traversal_result = self.process_video_batch_improved(traversal_videos[:500])  # Limit for performance
+                ultimate_result.videos.extend(traversal_result.videos)
+                ultimate_result.total_videos_processed += traversal_result.total_videos_processed
+                ultimate_result.total_coupons_found += traversal_result.total_coupons_found
+
+                self.session_stats['channel_traversal_videos'] = len(traversal_videos)
+                logger.info(f"✅ Channel traversal discovered {len(traversal_videos)} videos, extracted {traversal_result.total_coupons_found} coupons")
+
+        # Phase 3: Enhanced discovery mechanisms
+        if self.enable_channel_traversal:
+            logger.info("📍 Phase 3: Enhanced discovery (trending, playlists, related videos)...")
+
+            discovery_results = self.discovery_engine.run_comprehensive_discovery(
+                seed_videos=seed_videos[:50],  # Use first 50 as seeds
+                discovery_categories=['Science & Technology', 'Howto & Style', 'People & Blogs']
+            )
+
+            # Process discovered videos
+            enhanced_videos = discovery_results['discovered_videos']
+            if enhanced_videos:
+                enhanced_result = self.process_video_batch_improved(enhanced_videos[:300])  # Limit for performance
+                ultimate_result.videos.extend(enhanced_result.videos)
+                ultimate_result.total_videos_processed += enhanced_result.total_videos_processed
+                ultimate_result.total_coupons_found += enhanced_result.total_coupons_found
+
+                logger.info(f"✅ Enhanced discovery found {len(enhanced_videos)} videos, extracted {enhanced_result.total_coupons_found} coupons")
+
+            # Process cross-platform coupons
+            cross_platform_coupons = discovery_results['cross_platform_coupons']
+            if cross_platform_coupons:
+                cross_platform_result = self.process_cross_platform_coupons(cross_platform_coupons)
+                ultimate_result.videos.extend(cross_platform_result.videos)
+                ultimate_result.total_coupons_found += cross_platform_result.total_coupons_found
+
+                self.session_stats['cross_platform_coupons'] = len(cross_platform_coupons)
+                logger.info(f"✅ Cross-platform discovery found {len(cross_platform_coupons)} coupons")
+
+        # Phase 4: Web scraping (existing functionality)
+        if self.enable_web_scraping:
+            logger.info("📍 Phase 4: Web scraping major coupon sites...")
+
+            if not target_industries:
+                target_industries = ['hosting', 'fitness', 'software', 'gaming', 'fashion']
+
+            # Get target brands for each industry
+            target_brands = []
+            for industry in target_industries:
+                industry_brands = get_brands_by_category(industry)[:15]  # Top 15 brands per industry
+                target_brands.extend(industry_brands)
+
+            # Run web scraping
+            web_result = self.web_scraper.run_comprehensive_scraping(
+                target_brands=target_brands,
+                target_industries=target_industries
+            )
+
+            ultimate_result.videos.extend(web_result.videos)
+            ultimate_result.total_videos_processed += web_result.total_videos_processed
+            ultimate_result.total_coupons_found += web_result.total_coupons_found
+
+            self.session_stats['web_scraped_coupons'] = web_result.total_coupons_found
+            logger.info(f"✅ Web scraping added {web_result.total_coupons_found} additional coupons")
+
+        # Phase 5: Intelligent duplicate filtering and persistent storage
+        if self.enable_persistent_data:
+            logger.info("📍 Phase 5: Intelligent duplicate filtering and persistent storage...")
+
+            # Save with intelligent duplicate detection
+            saved_filename = self.data_manager.save_incremental_results(ultimate_result, append_to_existing=True)
+
+            # Update stats
+            self.session_stats['incremental_new_coupons'] = self.data_manager.duplicate_stats['new_coupons_added']
+
+            logger.info(f"✅ Saved results with intelligent duplicate filtering to: {saved_filename}")
+
+        # Print ultimate statistics
+        self.print_ultimate_stats(ultimate_result)
+
+        return ultimate_result
+
+    def process_cross_platform_coupons(self, cross_platform_coupons: List[Dict]) -> ScrapingResult:
+        """Process cross-platform coupon data into ScrapingResult format"""
+        result = ScrapingResult()
+
+        if not cross_platform_coupons:
+            return result
+
+        # Convert cross-platform coupons to CouponInfo objects
+        processed_coupons = []
+
+        for coupon_data in cross_platform_coupons:
+            try:
+                coupon = CouponInfo(
+                    coupon_code=coupon_data.get('coupon_code', ''),
+                    coupon_name=f"Cross-Platform Deal: {coupon_data.get('coupon_code', '')}",
+                    brand=coupon_data.get('brand', 'Unknown'),
+                    percent_off=None,
+                    expiry_date='N/A',
+                    description=coupon_data.get('description', '')[:200],
+                    category='cross_platform',
+                    video_id=coupon_data.get('source_url', 'cross_platform'),
+                    video_title=f"Cross-Platform Discovery: {coupon_data.get('source', 'Unknown')}",
+                    extraction_confidence=0.7
+                )
+                coupon.channel_name = f"Cross-Platform - {coupon_data.get('source', 'Unknown')}"
+                processed_coupons.append(coupon)
+
+            except Exception as e:
+                logger.error(f"Error processing cross-platform coupon: {e}")
+                continue
+
+        # Group into video-like container
+        if processed_coupons:
+            video_info = VideoInfo(
+                video_id="cross_platform_batch",
+                title="Cross-Platform Discovered Coupons",
+                description="Coupons discovered from cross-platform sources",
+                channel_title="Cross-Platform Discovery",
+                published_at=datetime.now().isoformat(),
+                view_count=0,
+                coupons=processed_coupons
+            )
+            result.videos.append(video_info)
+
+        result.total_videos_processed = 1
+        result.total_coupons_found = len(processed_coupons)
+
+        return result
+
+    def run_improved_extraction(self, search_queries: List[str] = None, max_results_per_query: int = 50) -> ScrapingResult:
         """
         Main entry point for improved coupon extraction with expanded influencer promotional content targeting.
         Now targets broader range of videos where influencers promote products and offer discount codes,
@@ -457,6 +715,114 @@ class ImprovedCouponEngine:
                 logger.info(f"  {category}: {count} coupons")
         
         logger.info("="*60)
+
+    def print_comprehensive_stats(self, result: ScrapingResult):
+        """Print comprehensive session statistics including web scraping"""
+        logger.info("="*70)
+        logger.info("COMPREHENSIVE EXTRACTION SESSION STATISTICS")
+        logger.info("="*70)
+        logger.info(f"Total Videos Analyzed (YouTube): {self.session_stats['total_videos_analyzed']}")
+        logger.info(f"Videos with Valid Coupons: {len(result.videos)}")
+        logger.info(f"Total Coupons Found: {result.total_coupons_found}")
+        logger.info(f"YouTube Coupons: {result.total_coupons_found - self.session_stats.get('web_scraped_coupons', 0)}")
+        logger.info(f"Web Scraped Coupons: {self.session_stats.get('web_scraped_coupons', 0)}")
+        logger.info(f"False Positives Prevented: {self.session_stats['false_positives_prevented']}")
+        logger.info(f"Unique Code-Brand Combinations: {len(self.processed_combinations)}")
+
+        if result.videos:
+            # Brand distribution
+            brand_counter = Counter()
+            category_counter = Counter()
+            source_counter = Counter()
+
+            for video in result.videos:
+                for coupon in video.coupons:
+                    brand_counter[coupon.brand] += 1
+                    category_counter[coupon.category] += 1
+                    if hasattr(coupon, 'channel_name'):
+                        if 'Web Scraping' in coupon.channel_name:
+                            source_counter['Web Scraping'] += 1
+                        else:
+                            source_counter['YouTube'] += 1
+
+            logger.info("\nSOURCE DISTRIBUTION:")
+            for source, count in source_counter.most_common():
+                logger.info(f"  {source}: {count} coupons")
+
+            logger.info("\nTOP BRANDS (Top 10):")
+            for brand, count in brand_counter.most_common(10):
+                logger.info(f"  {brand}: {count} coupons")
+
+            logger.info("\nCATEGORY DISTRIBUTION:")
+            for category, count in category_counter.most_common():
+                logger.info(f"  {category}: {count} coupons")
+
+        logger.info("="*70)
+
+    def print_ultimate_stats(self, result: ScrapingResult):
+        """Print comprehensive ultimate extraction statistics"""
+        logger.info("="*80)
+        logger.info("🚀 ULTIMATE EXTRACTION SESSION STATISTICS 🚀")
+        logger.info("="*80)
+        logger.info(f"📹 Total Videos Analyzed: {self.session_stats['total_videos_analyzed']}")
+        logger.info(f"📁 Videos with Valid Coupons: {len(result.videos)}")
+        logger.info(f"🎯 Total Coupons Found: {result.total_coupons_found}")
+        logger.info("")
+        logger.info("📊 BREAKDOWN BY SOURCE:")
+        logger.info(f"   🔍 YouTube Keyword Search: {result.total_coupons_found - self.session_stats.get('web_scraped_coupons', 0) - self.session_stats.get('cross_platform_coupons', 0)}")
+        logger.info(f"   📺 Channel Traversal Videos: {self.session_stats.get('channel_traversal_videos', 0)}")
+        logger.info(f"   🌐 Web Scraped Coupons: {self.session_stats.get('web_scraped_coupons', 0)}")
+        logger.info(f"   🔗 Cross-Platform Coupons: {self.session_stats.get('cross_platform_coupons', 0)}")
+        logger.info("")
+        logger.info("🛡️ DUPLICATE DETECTION:")
+        logger.info(f"   ❌ False Positives Prevented: {self.session_stats['false_positives_prevented']}")
+        logger.info(f"   🆕 New Coupons Added: {self.session_stats.get('incremental_new_coupons', 0)}")
+        logger.info(f"   🔑 Unique Code-Brand Combinations: {len(self.processed_combinations)}")
+
+        if self.enable_persistent_data and hasattr(self, 'data_manager'):
+            logger.info("")
+            logger.info("💾 PERSISTENT DATA STATS:")
+            summary = self.data_manager.get_existing_coupon_summary()
+            logger.info(f"   📋 Total Unique Codes in Database: {summary['unique_codes']}")
+            logger.info(f"   🏢 Total Unique Brands: {summary['unique_brands']}")
+            logger.info(f"   📂 Total Categories: {summary['unique_categories']}")
+
+        if result.videos:
+            # Enhanced analytics
+            brand_counter = Counter()
+            category_counter = Counter()
+            source_counter = Counter()
+
+            for video in result.videos:
+                for coupon in video.coupons:
+                    brand_counter[coupon.brand] += 1
+                    category_counter[coupon.category] += 1
+                    if hasattr(coupon, 'channel_name'):
+                        if 'Web Scraping' in coupon.channel_name:
+                            source_counter['Web Scraping'] += 1
+                        elif 'Cross-Platform' in coupon.channel_name:
+                            source_counter['Cross-Platform'] += 1
+                        else:
+                            source_counter['YouTube'] += 1
+
+            logger.info("")
+            logger.info("📈 SOURCE DISTRIBUTION:")
+            for source, count in source_counter.most_common():
+                logger.info(f"   {source}: {count} coupons")
+
+            logger.info("")
+            logger.info("🏆 TOP BRANDS (Top 15):")
+            for brand, count in brand_counter.most_common(15):
+                logger.info(f"   {brand}: {count} coupons")
+
+            logger.info("")
+            logger.info("📂 CATEGORY DISTRIBUTION:")
+            for category, count in category_counter.most_common():
+                logger.info(f"   {category}: {count} coupons")
+
+        logger.info("="*80)
+        logger.info("🎉 ULTIMATE EXTRACTION COMPLETED SUCCESSFULLY! 🎉")
+        logger.info("="*80)
 
 # Usage example
 if __name__ == "__main__":
