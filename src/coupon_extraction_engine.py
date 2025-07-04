@@ -48,7 +48,8 @@ class ImprovedCouponEngine:
     - Focuses on actual coupon codes, not random words
     """
     
-    def __init__(self, api_key: str, enable_deduplication: bool = True):
+    def __init__(self, api_key: str, enable_deduplication: bool = True,
+                 existing_results_files: Optional[List[str]] = None):
         """Initialize improved extraction engine"""
         self.api_key = api_key
         if not self.api_key or self.api_key == 'YOUR_API_KEY_HERE':
@@ -63,6 +64,10 @@ class ImprovedCouponEngine:
 
         # Load already scraped combinations from previous log to prevent re-scraping in future sessions
         self._load_logged_combinations()
+
+        # Load existing results (CSV) for incremental runs
+        if existing_results_files:
+            self._load_existing_results_from_csv(existing_results_files)
         self.session_stats = {
             'total_videos_analyzed': 0,
             'total_coupons_found': 0,
@@ -377,11 +382,25 @@ class ImprovedCouponEngine:
                 rows.append(row)
 
         if rows:
-            df = pd.DataFrame(rows)
-            # Remove duplicates based on code-brand combination
-            df = df.drop_duplicates(subset=['Coupon Code', 'Brand'], keep='first')
-            df.to_csv(filename, index=False)
-            logger.info(f"Exported {len(df)} unique, high-quality coupons with YouTuber channels to {filename}")
+            df_new = pd.DataFrame(rows)
+            # Always deduplicate new batch first
+            df_new = df_new.drop_duplicates(subset=['Coupon Code', 'Brand'], keep='first')
+
+            # If a previous result file exists, append while keeping only new unique rows
+            if os.path.exists(filename):
+                try:
+                    df_existing = pd.read_csv(filename)
+                    combined = pd.concat([df_existing, df_new], ignore_index=True)
+                    combined = combined.drop_duplicates(subset=['Coupon Code', 'Brand'], keep='first')
+                    combined.to_csv(filename, index=False)
+                    new_count = len(combined) - len(df_existing)
+                    logger.info(f"Appended {new_count} new coupons to existing results ({len(combined)} total)")
+                except Exception as e:
+                    logger.warning(f"Could not append to existing file; writing fresh: {e}")
+                    df_new.to_csv(filename, index=False)
+            else:
+                df_new.to_csv(filename, index=False)
+                logger.info(f"Exported {len(df_new)} unique, high-quality coupons with YouTuber channels to {filename}")
         else:
             logger.warning("No coupon data to export")
 
@@ -494,6 +513,125 @@ class ImprovedCouponEngine:
             logger.info(f"Loaded {len(self.processed_combinations)} existing coupon combinations from log for deduplication")
         except Exception as e:
             logger.warning(f"Could not read historical log file for deduplication: {e}")
+
+    def _load_existing_results_from_csv(self, csv_paths: List[str]):
+        """Populate processed_combinations with entries from prior CSV result files."""
+        loaded = 0
+        for path in csv_paths:
+            if not os.path.exists(path):
+                continue
+            try:
+                df_existing = pd.read_csv(path, usecols=['Coupon Code', 'Brand'])
+                for _, row in df_existing.iterrows():
+                    code = str(row['Coupon Code']).strip().upper()
+                    brand = str(row['Brand']).strip().upper()
+                    if code and brand and code != 'N/A' and brand != 'N/A':
+                        self.processed_combinations.add(f"{code}_{brand}".lower())
+                        loaded += 1
+            except Exception as e:
+                logger.warning(f"Failed to load existing CSV {path}: {e}")
+        if loaded:
+            logger.info(f"Loaded {loaded} coupon combinations from existing CSV files for deduplication")
+
+    def get_videos_from_channel(self, channel_id: str, max_results: int = 200) -> List[str]:
+        """Retrieve up to `max_results` recent video IDs from a given channel."""
+        video_ids = []
+        try:
+            next_page_token = None
+            fetched = 0
+            while fetched < max_results:
+                response = self.youtube.search().list(
+                    channelId=channel_id,
+                    part='id',
+                    type='video',
+                    order='date',
+                    maxResults=min(50, max_results - fetched),
+                    pageToken=next_page_token
+                ).execute()
+
+                ids = [item['id']['videoId'] for item in response.get('items', [])]
+                video_ids.extend(ids)
+                fetched += len(ids)
+
+                next_page_token = response.get('nextPageToken')
+                if not next_page_token:
+                    break
+            logger.info(f"Collected {len(video_ids)} videos from channel {channel_id}")
+        except HttpError as e:
+            logger.error(f"YouTube API error while fetching channel videos: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error while fetching channel videos: {e}")
+        return video_ids
+
+    def get_related_videos(self, video_id: str, max_results: int = 25) -> List[str]:
+        """Get related videos suggested by YouTube for a given video."""
+        try:
+            response = self.youtube.search().list(
+                part='id',
+                type='video',
+                relatedToVideoId=video_id,
+                maxResults=min(max_results, 50)
+            ).execute()
+            return [item['id']['videoId'] for item in response.get('items', [])]
+        except HttpError as e:
+            logger.error(f"YouTube API error fetching related videos for {video_id}: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"Unexpected error fetching related videos for {video_id}: {e}")
+            return []
+
+    def run_comprehensive_extraction(
+        self,
+        search_queries: Optional[List[str]] = None,
+        channel_ids: Optional[List[str]] = None,
+        include_related: bool = True,
+        related_hops: int = 1,
+        max_related_per_video: int = 10,
+        max_videos_per_channel: int = 200,
+        max_results_per_query: int = 30,
+    ) -> ScrapingResult:
+        """Comprehensive extraction that combines keyword search, channel traversal, and related-video exploration."""
+        all_video_ids: Set[str] = set()
+
+        # 1. Keyword search (reuse previous logic)
+        if search_queries:
+            for query in search_queries:
+                logger.info(f"[DISCOVERY] Keyword search: {query}")
+                vids = self.search_fresh_videos(query, max_results_per_query)
+                all_video_ids.update(vids)
+
+        # 2. Channel traversal
+        if channel_ids:
+            for ch_id in channel_ids:
+                logger.info(f"[DISCOVERY] Traversing channel: {ch_id}")
+                vids = self.get_videos_from_channel(ch_id, max_videos_per_channel)
+                all_video_ids.update(vids)
+
+        # 3. Related-video exploration
+        if include_related and related_hops > 0:
+            current_level_ids = list(all_video_ids)
+            for hop in range(related_hops):
+                logger.info(f"[DISCOVERY] Related-video hop {hop+1}/{related_hops}")
+                new_ids: Set[str] = set()
+                for vid in current_level_ids:
+                    related = self.get_related_videos(vid, max_related_per_video)
+                    new_ids.update(related)
+                # Deduplicate
+                new_unique = new_ids - all_video_ids
+                logger.info(f"  Added {len(new_unique)} new IDs from related-video hop {hop+1}")
+                all_video_ids.update(new_unique)
+                current_level_ids = list(new_unique)
+                if not current_level_ids:
+                    break
+
+        logger.info(f"[DISCOVERY] Total unique videos discovered: {len(all_video_ids)}")
+
+        # Process videos as usual
+        result = self.process_video_batch_improved(list(all_video_ids))
+
+        # Print stats
+        self.print_session_stats(result)
+        return result
 
 # Usage example
 if __name__ == "__main__":
