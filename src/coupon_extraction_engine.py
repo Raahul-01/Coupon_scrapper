@@ -58,7 +58,11 @@ class ImprovedCouponEngine:
         
         # Improved tracking
         self.enable_deduplication = enable_deduplication
-        self.processed_combinations: Set[str] = set()  # Track code-brand combinations
+        # Track code-brand combinations (persisted across sessions)
+        self.processed_combinations: Set[str] = set()
+
+        # Load already scraped combinations from previous log to prevent re-scraping in future sessions
+        self._load_logged_combinations()
         self.session_stats = {
             'total_videos_analyzed': 0,
             'total_coupons_found': 0,
@@ -88,8 +92,8 @@ class ImprovedCouponEngine:
         validated_coupons = []
         
         for info in coupon_info_list:
-            # Create unique identifier for deduplication
-            combination_id = f"{info['coupon_code']}_{info['brand']}_{info['category']}"
+            # Create unique identifier for deduplication (code + brand only)
+            combination_id = f"{info['coupon_code']}_{info['brand']}"
             
             # Check if this exact combination was already processed
             if self.enable_deduplication and combination_id.lower() in self.processed_combinations:
@@ -457,6 +461,39 @@ class ImprovedCouponEngine:
                 logger.info(f"  {category}: {count} coupons")
         
         logger.info("="*60)
+
+    def _load_logged_combinations(self):
+        """Populate processed_combinations set with code-brand pairs that already appear in historical logs.
+
+        This ensures the engine will not re-scrape coupons that have been captured in previous runs, as requested.
+        The method scans the default log file (data/improved_automation_system.log) for lines that follow the
+        logging pattern "Valid coupon extracted: CODE -> BRAND" and adds the combination to the in-memory set.
+        """
+        log_path = os.path.join('data', 'improved_automation_system.log')
+
+        if not os.path.exists(log_path):
+            return  # Nothing to load on first run
+
+        try:
+            with open(log_path, 'r', encoding='utf-8') as log_file:
+                for line in log_file:
+                    # Look for the marker we use when a coupon is validated
+                    if 'Valid coupon extracted:' in line:
+                        try:
+                            # Expected pattern: "... Valid coupon extracted: CODE -> BRAND"
+                            extracted_part = line.split('Valid coupon extracted:')[1].strip()
+                            if '->' in extracted_part:
+                                code_part, brand_part = extracted_part.split('->', 1)
+                                code = code_part.strip().upper()
+                                brand = brand_part.strip().upper()
+                                if code and brand:
+                                    self.processed_combinations.add(f"{code}_{brand}".lower())
+                        except Exception:
+                            # Silently ignore malformed lines
+                            continue
+            logger.info(f"Loaded {len(self.processed_combinations)} existing coupon combinations from log for deduplication")
+        except Exception as e:
+            logger.warning(f"Could not read historical log file for deduplication: {e}")
 
 # Usage example
 if __name__ == "__main__":

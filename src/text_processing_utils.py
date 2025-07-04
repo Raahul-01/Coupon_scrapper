@@ -241,6 +241,20 @@ def extract_brand_from_context(context: str, coupon_code: str) -> Optional[str]:
                 return potential_brand
 
     # If no brand found, return None instead of guessing
+    # FINAL FALLBACK: Look for the nearest capitalized word around the coupon code that could be a brand
+    # Search ±60 characters from the first occurrence of the coupon code in the context
+    code_pos = context.upper().find(coupon_code.upper())
+    if code_pos != -1:
+        start_window = max(0, code_pos - 60)
+        end_window = min(len(context), code_pos + len(coupon_code) + 60)
+        window_text = context[start_window:end_window]
+
+        # Find capitalized words (3-20 chars) that are not common generic words
+        capitalized_words = re.findall(r'\b([A-Z][A-Za-z]{2,19})\b', window_text)
+        for word in capitalized_words:
+            if is_valid_brand_name_improved(word):
+                return word.title()
+
     return None
 
 def is_valid_brand_name_improved(brand: str) -> bool:
